@@ -359,11 +359,11 @@ def run_transformer_lm(
 
 
 def run_rmsnorm(
-    d_model: int,
-    eps: float,
-    weights: Float[Tensor, " d_model"],
-    in_features: Float[Tensor, " ... d_model"],
-) -> Float[Tensor, " ... d_model"]:
+    d_model: int,  # RMSNorm输入的维度大小
+    eps: float,    # 为保证数值稳定性而添加到分母的小值
+    weights: Float[Tensor, " d_model"],  # RMSNorm的权重参数
+    in_features: Float[Tensor, " ... d_model"],  # 输入特征，可以具有任意维度
+) -> Float[Tensor, " ... d_model"]:  # 输出张量，与输入特征形状相同
     """Given the weights of a RMSNorm affine transform,
     return the output of running RMSNorm on the input features.
 
@@ -563,11 +563,11 @@ def get_tokenizer(
 
 
 def run_train_bpe(
-    input_path: str | os.PathLike,
-    vocab_size: int,
-    special_tokens: list[str],
-    **kwargs,
-) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    input_path: str | os.PathLike,  # 输入语料库的文件路径，可以是字符串或os.PathLike对象
+    vocab_size: int,  # 词汇表的总大小，包含特殊标记
+    special_tokens: list[str],  # 需要添加到词汇表中的特殊标记列表，这些标记不会被拆分
+    **kwargs,  # 其他可选参数
+) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:  # 返回类型为元组，包含词汇表和合并规则
     """Given the path to an input corpus, run train a BPE tokenizer and
     output its vocabulary and merges.
 
@@ -589,4 +589,7 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    print("Training BPE tokenizer with input path:" + str(input_path));
+    print("Vocab size:" + str(vocab_size));
+    for special_token in special_tokens:
+        print("Special token: " + special_token);
