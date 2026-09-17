@@ -9,6 +9,9 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
+import regex
+from cs336_basics.my_utils import find_chunk_boundaries
+from collections import Counter
 
 def run_linear(
     d_in: int,
@@ -568,28 +571,91 @@ def run_train_bpe(
     special_tokens: list[str],  # 需要添加到词汇表中的特殊标记列表，这些标记不会被拆分
     **kwargs,  # 其他可选参数
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:  # 返回类型为元组，包含词汇表和合并规则
-    """Given the path to an input corpus, run train a BPE tokenizer and
-    output its vocabulary and merges.
-
-    Args:
-        input_path (str | os.PathLike): Path to BPE tokenizer training data.
-        vocab_size (int): Total number of items in the tokenizer's vocabulary (including special tokens).
-        special_tokens (list[str]): A list of string special tokens to be added to the tokenizer vocabulary.
-            These strings will never be split into multiple tokens, and will always be
-            kept as a single token. If these special tokens occur in the `input_path`,
-            they are treated as any other string.
-
-    Returns:
-        tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-            vocab:
-                The trained tokenizer vocabulary, a mapping from int (token ID in the vocabulary)
-                to bytes (token bytes)
-            merges:
-                BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
-                representing that <token1> was merged with <token2>.
-                Merges are ordered by order of creation.
-    """
-    print("Training BPE tokenizer with input path:" + str(input_path));
-    print("Vocab size:" + str(vocab_size));
+    # 词表初始化
+    vocab = { i : bytes([i]) for i in range(256) }
     for special_token in special_tokens:
-        print("Special token: " + special_token);
+        vocab[ len(vocab) ] = special_token.encode("utf-8");
+    # 词频表初始化
+    words_freq = Counter();
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""";
+    re_pat = regex.compile(PAT);
+
+    # 文件读取，为词频表注入数据
+    with open(input_path, "rb") as file:
+        ## 文件分块
+        if not special_tokens:
+            file.seek(0, os.SEEK_END);
+            boundaries = [0, file.tell()];
+        else:
+            num_chunks = 4; # 这里先定为切 4 块
+            boundaries = [];
+            for special_token in special_tokens:
+                boundaries += find_chunk_boundaries(file, num_chunks, special_token.encode("utf-8"));
+        file.seek(0);
+        boundaries = sorted(set(boundaries));
+
+        ## 读块，去除其中的特殊标识
+        if len(boundaries) > 1: # 有分块时才处理
+            sorted_tokens = sorted(special_tokens, key=len, reverse=True);
+            chunking_pattern = "|".join( regex.escape(token) for token in sorted_tokens );
+            for start, end in zip(boundaries[:-1],boundaries[1:]):
+                file.seek(start);
+                chunks = file.read(end - start).decode("utf-8");
+                # 切分chunk
+                if chunking_pattern:
+                    chunks = regex.split(chunking_pattern, chunks);
+                # 读取 chunks 里的分词到词频表中
+                for chunk in chunks:
+                    words = re_pat.findall(chunk);
+                    for word in words:
+                        words_freq[tuple(word.encode("utf-8"))] += 1;
+
+    # 进行合并
+    ## 对频表初始化
+    pairs_freq = Counter();
+    for word in words_freq:
+        for pair_start, pair_end in zip(word[:-1], word[1:]):
+            pairs_freq[tuple([pair_start, pair_end])] += words_freq[word];
+
+    ## 合并操作
+    words_size = len(words_freq);
+    words_sum = sum(words_freq.values());
+    merges = [];
+    while len(vocab) < vocab_size and pairs_freq:
+        best = max(pairs_freq, key=lambda p: (pairs_freq[p], vocab[p[0]], vocab[p[1]]));
+        new_id = len(vocab);
+        vocab[new_id] = vocab[best[0]] + vocab[best[1]];
+        merges.append((vocab[best[0]], vocab[best[1]]));
+        del_list = [];
+        ins_list = [];
+        for word in words_freq:
+            new_wordL = list(word);
+            for i in range(len(new_wordL)):
+                if i < len(new_wordL) - 1:
+                    if (new_wordL[i], new_wordL[i+1]) == best:
+                        if i > 0: 
+                            pairs_freq[(new_wordL[i-1], new_wordL[i])] -= words_freq[word];
+                            if pairs_freq[(new_wordL[i-1], new_wordL[i])] == 0:
+                                del pairs_freq[(new_wordL[i-1], new_wordL[i])];
+                            pairs_freq[(new_wordL[i-1], new_id)] += words_freq[word];
+                        if i + 2 < len(new_wordL):
+                            pairs_freq[(new_wordL[i+1], new_wordL[i+2])] -= words_freq[word];
+                            if pairs_freq[(new_wordL[i+1], new_wordL[i+2])] == 0:
+                                del pairs_freq[(new_wordL[i+1], new_wordL[i+2])];
+                            pairs_freq[(new_id, new_wordL[i+2])] += words_freq[word];
+                        pairs_freq[best] -= words_freq[word];
+                        if pairs_freq[best] == 0:
+                            del pairs_freq[best];
+                        new_wordL[i] = new_id;
+                        new_wordL.pop(i+1);
+            if len(new_wordL) < len(word):
+                del_list.append(word);
+                ins_list.append(tuple(new_wordL));
+        for i in range(len(del_list)):
+            words_freq[ins_list[i]] += words_freq[del_list[i]];
+            del words_freq[del_list[i]];
+
+        assert len(words_freq) == words_size, "合并后词表大小应该相同";
+        assert sum(words_freq.values()) == words_sum, "合并后词数应该相同";
+
+    return (vocab, merges);
