@@ -594,7 +594,7 @@ def run_train_bpe(
         for result in pool.imap_unordered(bound, [i for i in zip(boundaries[:-1],boundaries[1:])]):
             words_freq.update(result);
 
-    print("对词表初始化耗时: ", time.perf_counter() - time_point);
+    print("对词表初始化耗时: ", time.perf_counter() - time_point, flush=True);
     time_point = time.perf_counter();
     # 进行合并
     ## 对频表初始化
