@@ -10,8 +10,12 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
 import regex
-from cs336_basics.my_utils import find_chunk_boundaries
+from cs336_basics.my_utils import get_chunk_boundiers_initial
+from cs336_basics.my_utils import get_vocab_from_chunk
+import multiprocessing
 from collections import Counter
+from functools import partial
+import time
 
 def run_linear(
     d_in: int,
@@ -571,56 +575,46 @@ def run_train_bpe(
     special_tokens: list[str],  # 需要添加到词汇表中的特殊标记列表，这些标记不会被拆分
     **kwargs,  # 其他可选参数
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:  # 返回类型为元组，包含词汇表和合并规则
+    time_point = time.perf_counter();
+    time_point_start = time_point;
     # 词表初始化
     vocab = { i : bytes([i]) for i in range(256) }
     for special_token in special_tokens:
         vocab[ len(vocab) ] = special_token.encode("utf-8");
     # 词频表初始化
     words_freq = Counter();
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""";
-    re_pat = regex.compile(PAT);
+    sorted_tokens = sorted(special_tokens, key=len, reverse=True);
+    chunking_pattern = "|".join( regex.escape(token) for token in sorted_tokens );
 
-    # 文件读取，为词频表注入数据
-    with open(input_path, "rb") as file:
-        ## 文件分块
-        if not special_tokens:
-            file.seek(0, os.SEEK_END);
-            boundaries = [0, file.tell()];
-        else:
-            num_chunks = 4; # 这里先定为切 4 块
-            boundaries = [];
-            for special_token in special_tokens:
-                boundaries += find_chunk_boundaries(file, num_chunks, special_token.encode("utf-8"));
-        file.seek(0);
-        boundaries = sorted(set(boundaries));
+    desired_num_chunks = 8; # 电脑 8 核
+    boundaries = get_chunk_boundiers_initial(input_path, desired_num_chunks, special_tokens);
 
-        ## 读块，去除其中的特殊标识
-        if len(boundaries) > 1: # 有分块时才处理
-            sorted_tokens = sorted(special_tokens, key=len, reverse=True);
-            chunking_pattern = "|".join( regex.escape(token) for token in sorted_tokens );
-            for start, end in zip(boundaries[:-1],boundaries[1:]):
-                file.seek(start);
-                chunks = file.read(end - start).decode("utf-8");
-                # 切分chunk
-                if chunking_pattern:
-                    chunks = regex.split(chunking_pattern, chunks);
-                # 读取 chunks 里的分词到词频表中
-                for chunk in chunks:
-                    words = re_pat.findall(chunk);
-                    for word in words:
-                        words_freq[tuple(word.encode("utf-8"))] += 1;
+    bound = partial(get_vocab_from_chunk, input_path, chunking_pattern);
+    with multiprocessing.Pool(processes=8) as pool:
+        for result in pool.imap_unordered(bound, [i for i in zip(boundaries[:-1],boundaries[1:])]):
+            words_freq.update(result);
 
+    print("对词表初始化耗时: ", time.perf_counter() - time_point);
+    time_point = time.perf_counter();
     # 进行合并
     ## 对频表初始化
     pairs_freq = Counter();
     for word in words_freq:
         for pair_start, pair_end in zip(word[:-1], word[1:]):
             pairs_freq[tuple([pair_start, pair_end])] += words_freq[word];
+    
+    print("对频表初始化耗时: ", time.perf_counter() - time_point, flush=True);
+    time_point = time.perf_counter();
 
     ## 合并操作
     words_size = len(words_freq);
     words_sum = sum(words_freq.values());
     merges = [];
+
+    ### 计时用
+    rounds = 500;
+    time_point_merge = time_point;
+
     while len(vocab) < vocab_size and pairs_freq:
         best = max(pairs_freq, key=lambda p: (pairs_freq[p], vocab[p[0]], vocab[p[1]]));
         new_id = len(vocab);
@@ -658,4 +652,9 @@ def run_train_bpe(
         assert len(words_freq) == words_size, "合并后词表大小应该相同";
         assert sum(words_freq.values()) == words_sum, "合并后词数应该相同";
 
+        if ( len(vocab) - 256 - len(special_tokens) ) % rounds == 0:
+            print( "合并 ", rounds, " 轮耗时: ", time.perf_counter() - time_point);
+            time_point = time.perf_counter();
+    print( "合并共耗时", time.perf_counter() - time_point_merge);
+    print( "总共耗时", time.perf_counter() - time_point_start);
     return (vocab, merges);
