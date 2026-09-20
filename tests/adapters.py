@@ -13,9 +13,11 @@ import regex
 from cs336_basics.my_utils import get_chunk_boundiers_initial
 from cs336_basics.my_utils import get_vocab_from_chunk
 import multiprocessing
-from collections import Counter
+from collections import Counter, defaultdict
 from functools import partial
 import time
+import resource
+
 
 def run_linear(
     d_in: int,
@@ -586,7 +588,8 @@ def run_train_bpe(
     sorted_tokens = sorted(special_tokens, key=len, reverse=True);
     chunking_pattern = "|".join( regex.escape(token) for token in sorted_tokens );
 
-    desired_num_chunks = 8; # 电脑 8 核
+    # desired_num_chunks = 8; # 电脑 8 核
+    desired_num_chunks = 64; # owt 有点大
     boundaries = get_chunk_boundiers_initial(input_path, desired_num_chunks, special_tokens);
 
     bound = partial(get_vocab_from_chunk, input_path, chunking_pattern);
@@ -594,14 +597,20 @@ def run_train_bpe(
         for result in pool.imap_unordered(bound, [i for i in zip(boundaries[:-1],boundaries[1:])]):
             words_freq.update(result);
 
-    print("对词表初始化耗时: ", time.perf_counter() - time_point, flush=True);
+    print("词频表初始化耗时: ", time.perf_counter() - time_point, flush=True);
+    print("峰值/父 MB:", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
+          "峰值/子 MB:", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024**2, flush=True);
+
     time_point = time.perf_counter();
     # 进行合并
     ## 对频表初始化
     pairs_freq = Counter();
+    ## 对 - 词 字典
+    pairs_dict = defaultdict(set);
     for word in words_freq:
         for pair_start, pair_end in zip(word[:-1], word[1:]):
             pairs_freq[tuple([pair_start, pair_end])] += words_freq[word];
+            pairs_dict[tuple([pair_start, pair_end])].add(word);
     
     print("对频表初始化耗时: ", time.perf_counter() - time_point, flush=True);
     time_point = time.perf_counter();
@@ -612,7 +621,7 @@ def run_train_bpe(
     merges = [];
 
     ### 计时用
-    rounds = 500;
+    rounds = 2000;
     time_point_merge = time_point;
 
     while len(vocab) < vocab_size and pairs_freq:
@@ -622,7 +631,7 @@ def run_train_bpe(
         merges.append((vocab[best[0]], vocab[best[1]]));
         del_list = [];
         ins_list = [];
-        for word in words_freq:
+        for word in pairs_dict[best]:
             new_wordL = list(word);
             for i in range(len(new_wordL)):
                 if i < len(new_wordL) - 1:
@@ -646,6 +655,12 @@ def run_train_bpe(
                 del_list.append(word);
                 ins_list.append(tuple(new_wordL));
         for i in range(len(del_list)):
+            # 对 - 词 字典维护
+            for j in range(len(del_list[i]) - 1):
+                pairs_dict[(del_list[i][j], del_list[i][j+1])].discard(del_list[i]);
+            for j in range(len(ins_list[i]) - 1):
+                pairs_dict[(ins_list[i][j], ins_list[i][j+1])].add(ins_list[i]);
+            # 词频表维护
             words_freq[ins_list[i]] += words_freq[del_list[i]];
             del words_freq[del_list[i]];
 
@@ -655,6 +670,10 @@ def run_train_bpe(
         if ( len(vocab) - 256 - len(special_tokens) ) % rounds == 0:
             print( "合并 ", rounds, " 轮耗时: ", time.perf_counter() - time_point);
             time_point = time.perf_counter();
+
     print( "合并共耗时", time.perf_counter() - time_point_merge);
     print( "总共耗时", time.perf_counter() - time_point_start);
+    print( "最终峰值/父 MB:", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
+           "最终峰值/子 MB:", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024**2, flush=True);
+
     return (vocab, merges);
