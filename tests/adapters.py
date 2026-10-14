@@ -12,11 +12,12 @@ from torch import Tensor
 import regex
 from cs336_basics.my_utils import get_chunk_boundiers_initial
 from cs336_basics.my_utils import get_vocab_from_chunk
+from cs336_basics.tokenizer import Tokenizer
 import multiprocessing
 from collections import Counter, defaultdict
 from functools import partial
-import time
-import resource
+# import time
+# import resource
 
 
 def run_linear(
@@ -553,22 +554,7 @@ def get_tokenizer(
     merges: list[tuple[bytes, bytes]],
     special_tokens: list[str] | None = None,
 ) -> Any:
-    """Given a vocabulary, a list of merges, and a list of special tokens,
-    return a BPE tokenizer that uses the provided vocab, merges, and special tokens.
-
-    Args:
-        vocab (dict[int, bytes]): The tokenizer vocabulary, a mapping from int (token ID in the vocabulary)
-            to bytes (token bytes)
-        merges (list[tuple[bytes, bytes]]): BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
-            representing that <token1> was merged with <token2>.
-            Merges are ordered by order of creation.
-        special_tokens (list[str] | None): A list of string special tokens for the tokenizer. These strings will never
-            be split into multiple tokens, and will always be kept as a single token.
-
-    Returns:
-        A BPE tokenizer that uses the provided vocab, merges, and special tokens.
-    """
-    raise NotImplementedError
+    return Tokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(
@@ -577,8 +563,8 @@ def run_train_bpe(
     special_tokens: list[str],  # 需要添加到词汇表中的特殊标记列表，这些标记不会被拆分
     **kwargs,  # 其他可选参数
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:  # 返回类型为元组，包含词汇表和合并规则
-    time_point = time.perf_counter();
-    time_point_start = time_point;
+    # time_point = time.perf_counter();
+    # time_point_start = time_point;
     # 词表初始化
     vocab = { i : bytes([i]) for i in range(256) }
     for special_token in special_tokens:
@@ -597,11 +583,11 @@ def run_train_bpe(
         for result in pool.imap_unordered(bound, [i for i in zip(boundaries[:-1],boundaries[1:])]):
             words_freq.update(result);
 
-    print("词频表初始化耗时: ", time.perf_counter() - time_point, flush=True);
-    print("峰值/父 MB:", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
-          "峰值/子 MB:", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024**2, flush=True);
+    # print("词频表初始化耗时: ", time.perf_counter() - time_point, flush=True);
+    # print("峰值/父 MB:", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
+    #       "峰值/子 MB:", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024**2, flush=True);
 
-    time_point = time.perf_counter();
+    # time_point = time.perf_counter();
     # 进行合并
     ## 对频表初始化
     pairs_freq = Counter();
@@ -612,8 +598,8 @@ def run_train_bpe(
             pairs_freq[tuple([pair_start, pair_end])] += words_freq[word];
             pairs_dict[tuple([pair_start, pair_end])].add(word);
     
-    print("对频表初始化耗时: ", time.perf_counter() - time_point, flush=True);
-    time_point = time.perf_counter();
+    # print("对频表初始化耗时: ", time.perf_counter() - time_point, flush=True);
+    # time_point = time.perf_counter();
 
     ## 合并操作
     words_size = len(words_freq);
@@ -621,8 +607,8 @@ def run_train_bpe(
     merges = [];
 
     ### 计时用
-    rounds = 2000;
-    time_point_merge = time_point;
+    # rounds = 2000;
+    # time_point_merge = time_point;
 
     while len(vocab) < vocab_size and pairs_freq:
         best = max(pairs_freq, key=lambda p: (pairs_freq[p], vocab[p[0]], vocab[p[1]]));
@@ -667,13 +653,13 @@ def run_train_bpe(
         assert len(words_freq) == words_size, "合并后词表大小应该相同";
         assert sum(words_freq.values()) == words_sum, "合并后词数应该相同";
 
-        if ( len(vocab) - 256 - len(special_tokens) ) % rounds == 0:
-            print( "合并 ", rounds, " 轮耗时: ", time.perf_counter() - time_point);
-            time_point = time.perf_counter();
+        # if ( len(vocab) - 256 - len(special_tokens) ) % rounds == 0:
+        #     print( "合并 ", rounds, " 轮耗时: ", time.perf_counter() - time_point);
+        #     time_point = time.perf_counter();
 
-    print( "合并共耗时", time.perf_counter() - time_point_merge);
-    print( "总共耗时", time.perf_counter() - time_point_start);
-    print( "最终峰值/父 MB:", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
-           "最终峰值/子 MB:", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024**2, flush=True);
+    # print( "合并共耗时", time.perf_counter() - time_point_merge);
+    # print( "总共耗时", time.perf_counter() - time_point_start);
+    # print( "最终峰值/父 MB:", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
+    #        "最终峰值/子 MB:", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024**2, flush=True);
 
     return (vocab, merges);
