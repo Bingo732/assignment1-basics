@@ -15,6 +15,7 @@ from cs336_basics.my_utils import get_vocab_from_chunk
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.linear import Linear
 from cs336_basics.embedding import Embedding
+from cs336_basics.rmsnorm import RMSNorm
 import multiprocessing
 from collections import Counter, defaultdict
 from functools import partial
@@ -354,21 +355,9 @@ def run_rmsnorm(
     weights: Float[Tensor, " d_model"],  # RMSNorm的权重参数
     in_features: Float[Tensor, " ... d_model"],  # 输入特征，可以具有任意维度
 ) -> Float[Tensor, " ... d_model"]:  # 输出张量，与输入特征形状相同
-    """Given the weights of a RMSNorm affine transform,
-    return the output of running RMSNorm on the input features.
-
-    Args:
-        d_model (int): The dimensionality of the RMSNorm input.
-        eps: (float): A value added to the denominator for numerical stability.
-        weights (Float[Tensor, "d_model"]): RMSNorm weights.
-        in_features (Float[Tensor, "... d_model"]): Input features to run RMSNorm on. Can have arbitrary leading
-            dimensions.
-
-    Returns:
-        Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
-        RMSNorm of the `in_features`.
-    """
-    raise NotImplementedError
+    rmsnorm = RMSNorm(d_model, eps)
+    rmsnorm.load_state_dict({"weight": weights})
+    return rmsnorm(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
