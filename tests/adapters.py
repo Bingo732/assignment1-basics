@@ -20,6 +20,7 @@ from cs336_basics.silu import SiLU
 from cs336_basics.fnn import SwiGLU
 from cs336_basics.rope import RotaryPositionalEmbedding
 from cs336_basics.softmax import softmax
+from cs336_basics.sdpa import scaledDoProductAttention
 import multiprocessing
 from collections import Counter, defaultdict
 from functools import partial
@@ -70,19 +71,7 @@ def run_scaled_dot_product_attention(
     V: Float[Tensor, " ... keys d_v"],
     mask: Bool[Tensor, " ... queries keys"] | None = None,
 ) -> Float[Tensor, " ... queries d_v"]:
-    """
-    Given key (K), query (Q), and value (V) tensors, return
-    the output of your scaled dot product attention implementation.
-
-    Args:
-        Q (Float[Tensor, " ... queries d_k"]): Query tensor
-        K (Float[Tensor, " ... keys d_k"]): Key tensor
-        V (Float[Tensor, " ... keys d_v"]): Values tensor
-        mask (Bool[Tensor, " ... queries keys"] | None): Mask tensor
-    Returns:
-        Float[Tensor, " ... queries d_v"]: Output of SDPA
-    """
-    raise NotImplementedError
+    return scaledDoProductAttention(Q, K, V, mask)
 
 
 def run_multihead_self_attention(
