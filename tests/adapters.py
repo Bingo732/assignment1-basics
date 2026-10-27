@@ -20,7 +20,8 @@ from cs336_basics.silu import SiLU
 from cs336_basics.fnn import SwiGLU
 from cs336_basics.rope import RotaryPositionalEmbedding
 from cs336_basics.softmax import softmax
-from cs336_basics.sdpa import scaledDoProductAttention
+from cs336_basics.sdpa import scaledDotProductAttention
+from cs336_basics.mha import MultiHeadSelfAttention
 import multiprocessing
 from collections import Counter, defaultdict
 from functools import partial
@@ -71,7 +72,7 @@ def run_scaled_dot_product_attention(
     V: Float[Tensor, " ... keys d_v"],
     mask: Bool[Tensor, " ... queries keys"] | None = None,
 ) -> Float[Tensor, " ... queries d_v"]:
-    return scaledDoProductAttention(Q, K, V, mask)
+    return scaledDotProductAttention(Q, K, V, mask)
 
 
 def run_multihead_self_attention(
@@ -83,29 +84,12 @@ def run_multihead_self_attention(
     o_proj_weight: Float[Tensor, " d_model d_model"],
     in_features: Float[Tensor, " ... sequence_length d_model"],
 ) -> Float[Tensor, " ... sequence_length d_model"]:
-    """
-    Given the key, query, and value projection weights of a naive unbatched
-    implementation of multi-head attention, return the output of an optimized batched
-    implementation. This implementation should handle the key, query, and value projections
-    for all heads in a single matrix multiply.
-    This function should not use RoPE.
-    See section 3.2.2 of Vaswani et al., 2017.
-
-    Args:
-        d_model (int): Dimensionality of the feedforward input and output.
-        num_heads (int): Number of heads to use in multi-headed attention.
-        max_seq_len (int): Maximum sequence length to pre-cache if your implementation does that.
-        q_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the Q projection
-        k_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the K projection
-        v_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the V projection
-        o_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the output projection
-        in_features (Float[Tensor, "... sequence_length d_model"]): Tensor to run your implementation on.
-
-    Returns:
-        Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
-        implementation with the given QKV projection weights and input features.
-    """
-    raise NotImplementedError
+    mha = MultiHeadSelfAttention(d_model, num_heads, device=in_features.device, dtype=in_features.dtype)
+    mha.load_state_dict({"q_proj.weight": q_proj_weight,
+                         "k_proj.weight": k_proj_weight,
+                         "v_proj.weight": v_proj_weight,
+                         "output_proj.weight": o_proj_weight})
+    return mha(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -120,32 +104,13 @@ def run_multihead_self_attention_with_rope(
     in_features: Float[Tensor, " ... sequence_length d_model"],
     token_positions: Int[Tensor, " ... sequence_length"] | None = None,
 ) -> Float[Tensor, " ... sequence_length d_model"]:
-    """
-    Given the key, query, and value projection weights of a naive unbatched
-    implementation of multi-head attention, return the output of an optimized batched
-    implementation. This implementation should handle the key, query, and value projections
-    for all heads in a single matrix multiply.
-    This version of MHA should include RoPE.
-    In this case, the RoPE embedding dimension must be the head embedding dimension (d_model // num_heads).
-    See section 3.2.2 of Vaswani et al., 2017.
-
-    Args:
-        d_model (int): Dimensionality of the feedforward input and output.
-        num_heads (int): Number of heads to use in multi-headed attention.
-        max_seq_len (int): Maximum sequence length to pre-cache if your implementation does that.
-        theta (float): RoPE parameter.
-        q_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the Q projection
-        k_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the K projection
-        v_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the V projection
-        o_proj_weight (Float[Tensor, "d_model d_model"]): Weights for the output projection
-        in_features (Float[Tensor, "... sequence_length d_model"]): Tensor to run your implementation on.
-        token_positions (Int[Tensor, " ... sequence_length"] | None): Optional tensor with the positions of the tokens
-
-    Returns:
-        Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
-        implementation with the given QKV projection weights and input features.
-    """
-    raise NotImplementedError
+    rope = RotaryPositionalEmbedding(theta=theta, d_k=d_model//num_heads, max_seq_len=max_seq_len)
+    mha = MultiHeadSelfAttention(d_model, num_heads, device=in_features.device, dtype=in_features.dtype, rope=rope)
+    mha.load_state_dict({"q_proj.weight": q_proj_weight,
+                         "k_proj.weight": k_proj_weight,
+                         "v_proj.weight": v_proj_weight,
+                         "output_proj.weight": o_proj_weight})
+    return mha(in_features, token_positions)
 
 
 def run_rope(
@@ -157,7 +122,6 @@ def run_rope(
 ) -> Float[Tensor, " ... sequence_length d_k"]:
     rope = RotaryPositionalEmbedding(theta, d_k, max_seq_len)
     return rope(in_query_or_key, token_positions)
-
 
 
 def run_transformer_block(
