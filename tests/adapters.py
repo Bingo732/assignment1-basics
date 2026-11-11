@@ -25,6 +25,7 @@ from cs336_basics.mha import MultiHeadSelfAttention
 from cs336_basics.transformer_block import TransformerBlock
 from cs336_basics.transformer_lm import TransformerLM
 from cs336_basics.cross_entropy import crossEntropy
+from cs336_basics.AdamW import AdamW
 
 import multiprocessing
 from collections import Counter, defaultdict
@@ -220,10 +221,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
 
 def get_adamw_cls() -> Any:
-    """
-    Returns a torch.optim.Optimizer that implements AdamW.
-    """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
