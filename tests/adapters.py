@@ -211,15 +211,7 @@ def run_cross_entropy(
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
-    """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
-
-    Args:
-        parameters (Iterable[torch.nn.Parameter]): collection of trainable parameters.
-        max_l2_norm (float): a positive value containing the maximum l2-norm.
-
-    The gradients of the parameters (parameter.grad) should be modified in-place.
-    """
-    raise NotImplementedError
+    return gradientClipping(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
