@@ -26,6 +26,8 @@ from cs336_basics.transformer_block import TransformerBlock
 from cs336_basics.transformer_lm import TransformerLM
 from cs336_basics.cross_entropy import crossEntropy
 from cs336_basics.AdamW import AdamW
+from cs336_basics.lr import lrCosineSchedule
+from cs336_basics.gradient_clipping import gradientClipping
 
 import multiprocessing
 from collections import Counter, defaultdict
@@ -231,25 +233,7 @@ def run_get_lr_cosine_schedule(
     warmup_iters: int,
     cosine_cycle_iters: int,
 ):
-    """
-    Given the parameters of a cosine learning rate decay schedule (with linear
-    warmup) and an iteration number, return the learning rate at the given
-    iteration under the specified schedule.
-
-    Args:
-        it (int): Iteration number to get learning rate for.
-        max_learning_rate (float): alpha_max, the maximum learning rate for
-            cosine learning rate schedule (with warmup).
-        min_learning_rate (float): alpha_min, the minimum / final learning rate for
-            the cosine learning rate schedule (with warmup).
-        warmup_iters (int): T_w, the number of iterations to linearly warm-up
-            the learning rate.
-        cosine_cycle_iters (int): T_c, the number of cosine annealing iterations.
-
-    Returns:
-        Learning rate at the given iteration under the specified schedule.
-    """
-    raise NotImplementedError
+    return lrCosineSchedule(it, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters)
 
 
 def run_save_checkpoint(
