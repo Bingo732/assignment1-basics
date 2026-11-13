@@ -29,6 +29,7 @@ from cs336_basics.AdamW import AdamW
 from cs336_basics.lr import lrCosineSchedule
 from cs336_basics.gradient_clipping import gradientClipping
 from cs336_basics.data_loading import dataLoading
+from cs336_basics.checkpoint import saveCheckPoint, loadCheckPoint
 
 import multiprocessing
 from collections import Counter, defaultdict
@@ -218,17 +219,7 @@ def run_save_checkpoint(
     iteration: int,
     out: str | os.PathLike | BinaryIO | IO[bytes],
 ):
-    """
-    Given a model, optimizer, and an iteration number, serialize them to disk.
-
-    Args:
-        model (torch.nn.Module): Serialize the state of this model.
-        optimizer (torch.optim.Optimizer): Serialize the state of this optimizer.
-        iteration (int): Serialize this value, which represents the number of training iterations
-            we've completed.
-        out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
-    """
-    raise NotImplementedError
+    saveCheckPoint(model, optimizer, iteration, out)
 
 
 def run_load_checkpoint(
@@ -236,20 +227,7 @@ def run_load_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
 ) -> int:
-    """
-    Given a serialized checkpoint (path or file-like object), restore the
-    serialized state to the given model and optimizer.
-    Return the number of iterations that we previously serialized in
-    the checkpoint.
-
-    Args:
-        src (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialized checkpoint.
-        model (torch.nn.Module): Restore the state of this model.
-        optimizer (torch.optim.Optimizer): Restore the state of this optimizer.
-    Returns:
-        int: the previously-serialized number of iterations.
-    """
-    raise NotImplementedError
+    return loadCheckPoint(src, model, optimizer)
 
 
 def get_tokenizer(
